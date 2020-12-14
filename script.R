@@ -152,6 +152,6 @@ RF <- data.frame(predictions=unlist(lapply(preds, `[[`, "predictions")))
 pred.RF <- cbind(r.dfNA[c("x","y")], RF)
 abs.preds <- left_join(s.df,pred.RF)
 ES <- make_pct(rasterFromXYZ(abs.preds[,c("x", "y", "predictions")],crs="+proj=longlat +datum=WGS84"))
-plot(ES)
+plot(ES) # This works, but without SE's
 
 
