@@ -1,7 +1,9 @@
 library(metaforest)
 library(caret)
 library(tidyverse)
-
+library(parallel)
+library(doParallel)
+registerDoParallel(31) # Run in parallel -> 31 cores
 
 df <- read.csv("Dataset of effect of warming on biomass-20201210.csv",stringsAsFactors = TRUE) %>%
   rename(yi.total="RR",vi.total="Variance..v.",
@@ -101,5 +103,55 @@ library(parallel)
 library(doParallel)
 registerDoParallel(31) # Run in parallel -> 31 cores
 
+s<- stack("myStack.grd")
+names(s) <- c("biomass","Nitrogen","Ecosystems","biome.type","Vegetation.type", "Myc", "SCN", "MAT", "MAP")
+s.df <- as.data.frame(s,xy=TRUE) %>% 
+  #rename("Nitrogen"=Nitrogen_category,"Ecosystems"=Ecosystems_category,
+   #      "biome.type"=biome.type_category,"Vegetation.type"=Vegetation.type_category) %>%
+  mutate(Myc=recode_factor(Myc,"AM", "ECM", "NM"),
+         Warming.method=factor("infrared heater", levels=c("Cable","Greenhouse","infrared heater", "OTC", "passive warming")),
+         Duration = 5,
+         Tdelta = 2)
+
+r.dfNA <- s.df[complete.cases(s.df),]
+
+mod <- readRDS("mf_cv.RData")
+forest.abs <- mod$finalModel
+number_of_chunks = 200
+library(parallel)
+library(doParallel)
+registerDoParallel(31) # Run in parallel -> 31 cores
+preds <- lapply(seq(1, NROW(r.dfNA), ceiling(NROW(r.dfNA)/number_of_chunks)),
+                function(i) {
+                  df_tmp <- r.dfNA[i:min(i + ceiling(NROW(r.dfNA)/number_of_chunks) - 1, NROW(r.dfNA)),]
+                  predict(forest.abs, 
+                          type="se",
+                          data = df_tmp)
+                })
+##########  Error in predict.ranger.forest(forest, data, predict.all, num.trees, type,  : 
+#Error: No saved inbag counts in ranger object. Please set keep.inbag=TRUE when calling ranger. 
+
+#RF <- data.frame(predictions=unlist(lapply(preds, `[[`, "predictions")), se=unlist(lapply(preds, `[[`, "se")) )
+#pred.RF <- cbind(r.dfNA[c("x","y")], RF)
+#abs.preds <- left_join(s.df,pred.RF)
+#absES <- rasterFromXYZ(abs.preds[,c("x", "y", "predictions")],crs="+proj=longlat +datum=WGS84")
+#plot(absES)
+#absSE <- rasterFromXYZ(abs.preds[,c("x", "y", "se")],crs="+proj=longlat +datum=WGS84")
+#plot(absSE)
+
+# It works if we don't predict SE's
+preds <- lapply(seq(1, NROW(r.dfNA), ceiling(NROW(r.dfNA)/number_of_chunks)),
+                function(i) {
+                  df_tmp <- r.dfNA[i:min(i + ceiling(NROW(r.dfNA)/number_of_chunks) - 1, NROW(r.dfNA)),]
+                  predict(forest.abs, 
+                          #type="se", 
+                          data = df_tmp)})
+
+
+RF <- data.frame(predictions=unlist(lapply(preds, `[[`, "predictions")))
+pred.RF <- cbind(r.dfNA[c("x","y")], RF)
+abs.preds <- left_join(s.df,pred.RF)
+ES <- make_pct(rasterFromXYZ(abs.preds[,c("x", "y", "predictions")],crs="+proj=longlat +datum=WGS84"))
+plot(ES)
 
 
